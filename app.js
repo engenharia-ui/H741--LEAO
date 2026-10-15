@@ -6,12 +6,28 @@ const scene=new THREE.Scene();scene.background=new THREE.Color(0xf2f3f5);
 const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.01,1e8);camera.up.set(0,0,1);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setSize(innerWidth,innerHeight);renderer.localClippingEnabled=true;$('#view').append(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xffffff,0x9da9b5,2.1));const sun=new THREE.DirectionalLight(0xffffff,2.2);sun.position.set(100,120,220);scene.add(sun);
-const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.085;controls.screenSpacePanning=true;
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.rotateSpeed=.65;controls.screenSpacePanning=true;controls.minPolarAngle=.03;controls.maxPolarAngle=Math.PI/2-.035;
 const root=new THREE.Group();scene.add(root);const meshes=[],materialCache=new Map(),clip=new THREE.Plane(new THREE.Vector3(1,0,0),1e9);
 const bounds=new THREE.Box3(),center=new THREE.Vector3(),dim=new THREE.Vector3(),ray=new THREE.Raycaster(),pointer=new THREE.Vector2();let api,mid,base=10,selected=null,measure=false,cut=false,points=[],measureVisuals=[],cutAxis='x';
 function mat(c){let k=[c.x,c.y,c.z,c.w].join('-');if(!materialCache.has(k)){const m=new THREE.MeshPhongMaterial({color:new THREE.Color(c.x,c.y,c.z),side:THREE.DoubleSide,transparent:c.w<1,opacity:c.w});m.clippingPlanes=[clip];materialCache.set(k,m)}return materialCache.get(k)}
 function build(p,id,geomCache){let geom=geomCache.get(p.geometryExpressID);if(!geom){const g=api.GetGeometry(mid,p.geometryExpressID);const v=api.GetVertexArray(g.GetVertexData(),g.GetVertexDataSize()),idx=api.GetIndexArray(g.GetIndexData(),g.GetIndexDataSize());const pos=new Float32Array(v.length/2),normal=new Float32Array(v.length/2);for(let i=0,j=0;i<v.length;i+=6,j+=3){pos[j]=v[i];pos[j+1]=v[i+1];pos[j+2]=v[i+2];normal[j]=v[i+3];normal[j+1]=v[i+4];normal[j+2]=v[i+5]};geom=new THREE.BufferGeometry();geom.setAttribute('position',new THREE.BufferAttribute(pos,3));geom.setAttribute('normal',new THREE.BufferAttribute(normal,3));geom.setIndex(new THREE.BufferAttribute(new Uint32Array(idx),1));geomCache.set(p.geometryExpressID,geom);g.delete?.()};const m=new THREE.Mesh(geom,mat(p.color));m.applyMatrix4(new THREE.Matrix4().fromArray(p.flatTransformation));m.userData.id=id;root.add(m);meshes.push(m);bounds.expandByObject(m)}
-function fit(which='iso'){if(!meshes.length)return;bounds.getCenter(center);bounds.getSize(dim);base=Math.max(dim.length()*1.3,1);const v=which==='top'?new THREE.Vector3(0,0,1):which==='front'?new THREE.Vector3(0,-1,.12):which==='right'?new THREE.Vector3(1,0,.12):new THREE.Vector3(.85,-1,.72);camera.position.copy(center).addScaledVector(v.normalize(),base);camera.near=Math.max(base/10000,.001);camera.far=base*100;camera.updateProjectionMatrix();controls.target.copy(center);camera.lookAt(center);controls.update()}
+function fit(which='iso'){
+  if(!meshes.length)return;
+  bounds.getCenter(center);bounds.getSize(dim);
+  // Z é vertical em todas as vistas. Não alterar camera.up durante a navegação.
+  camera.up.set(0,0,1);
+  base=Math.max(dim.length()*1.3,1);
+  // Vista superior com mínimo deslocamento horizontal para evitar singularidade.
+  const v=which==='top'?new THREE.Vector3(0,-.001,1)
+    :which==='front'?new THREE.Vector3(0,-1,.04)
+    :which==='right'?new THREE.Vector3(1,0,.04)
+    :new THREE.Vector3(.9,-1,.95);
+  camera.position.copy(center).addScaledVector(v.normalize(),base);
+  camera.near=Math.max(base/10000,.001);camera.far=base*100;camera.updateProjectionMatrix();
+  controls.target.copy(center);
+  camera.lookAt(center);
+  controls.update();
+}
 function clearMeasure(){points=[];for(const m of measureVisuals){scene.remove(m);m.geometry?.dispose()}measureVisuals=[];$('#distance').textContent='Distância: —'}
 function hit(e){let r=renderer.domElement.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(pointer,camera);return ray.intersectObjects(meshes,false)[0]}
 function addMeasure(p){if(points.length===2)clearMeasure();points.push(p.clone());const d=new THREE.Mesh(new THREE.SphereGeometry(Math.max(base*.0017,.001),8,8),new THREE.MeshBasicMaterial({color:0xe55b13,depthTest:false}));d.position.copy(p);scene.add(d);measureVisuals.push(d);if(points.length===2){const g=new THREE.BufferGeometry().setFromPoints(points);const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xe55b13,depthTest:false}));scene.add(l);measureVisuals.push(l);const n=points[0].distanceTo(points[1]);$('#distance').textContent=`Distância: ${n.toFixed(3)} unidades geométricas do IFC`}}
